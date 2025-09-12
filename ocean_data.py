@@ -1,38 +1,38 @@
 import streamlit as st
 import pydeck as pdk
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import time
 
 st.set_page_config(page_title="Indian Ocean Floaters", layout="wide")
-st.title("🌊 Indian Ocean Floater Tracking (Dummy Data)")
+st.title("🌊 Indian Ocean Floater Tracking (Real Data)")
 
 # ------------------------------------------------------------------
-# Create 10 dummy floater paths (slightly different locations)
+# Load dataset
+# ------------------------------------------------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_csv("DATASET.csv")
+    return df
+
+df = load_data()
+
+# Ensure sorting by time
+df["time"] = pd.to_datetime(df["time"], errors="coerce")
+df = df.sort_values(["float_id", "time"]).reset_index(drop=True)
+
+# ------------------------------------------------------------------
+# Organize floaters
 # ------------------------------------------------------------------
 floaters = {
-    f"Floater {i+1}": [
-        [np.random.uniform(-20, 20) + step * 0.5,  # lat
-         np.random.uniform(50, 80) + step * 0.5]   # lon
-        for step in range(6)
-    ]
-    for i in range(10)
+    str(fid): grp[["latitude", "longitude"]].values.tolist()
+    for fid, grp in df.groupby("float_id")
 }
 
-# ------------------------------------------------------------------
-# Generate dummy ocean data for each floater
-# ------------------------------------------------------------------
-def generate_ocean_data(path):
-    steps = len(path)
-    return pd.DataFrame({
-        "step": range(steps),
-        "temperature": np.linspace(28, 22, steps) + np.random.normal(0, 0.3, steps),
-        "salinity": np.linspace(34.5, 35.5, steps) + np.random.normal(0, 0.05, steps),
-        "pH": np.linspace(8.15, 8.05, steps) + np.random.normal(0, 0.01, steps),
-    })
-
-floater_data = {name: generate_ocean_data(path) for name, path in floaters.items()}
+floater_data = {
+    str(fid): grp.reset_index(drop=True)
+    for fid, grp in df.groupby("float_id")
+}
 
 # ------------------------------------------------------------------
 # Sidebar controls
@@ -45,14 +45,12 @@ animate = st.sidebar.button("Animate Selected Floater")
 # Helper functions
 # ------------------------------------------------------------------
 def get_frame(path, step):
-    """Return one position at a time"""
     if step < len(path):
         lat, lon = path[step]
         return pd.DataFrame([{"lat": lat, "lon": lon}])
     return pd.DataFrame([])
 
 def get_trails(path, step):
-    """Return trail (path covered so far)"""
     if step < len(path):
         return pd.DataFrame([{"path": [[lon, lat] for lat, lon in path[:step+1]]}])
     return pd.DataFrame([])
@@ -61,7 +59,8 @@ def get_trails(path, step):
 # Map initial state
 # ------------------------------------------------------------------
 view_state = pdk.ViewState(latitude=0, longitude=70, zoom=2)
-deck_chart = st.empty()  # placeholder for map
+deck_chart = st.empty()
+info_box = st.empty()  # for showing floater info
 
 # ------------------------------------------------------------------
 # Animate only selected floater
@@ -72,12 +71,12 @@ data = floater_data[selected_floater]
 if animate:
     steps = len(path)
     for step in range(steps):
-        df = get_frame(path, step)
+        df_frame = get_frame(path, step)
         trails_df = get_trails(path, step)
 
         scatter_layer = pdk.Layer(
             "ScatterplotLayer",
-            df,
+            df_frame,
             get_position='[lon, lat]',
             get_fill_color='[255, 0, 0]',
             get_radius=30000,
@@ -96,20 +95,32 @@ if animate:
         r = pdk.Deck(
             layers=[path_layer, scatter_layer],
             initial_view_state=view_state,
-            map_style=None,   # OpenStreetMap
+            map_style=None,
             tooltip={"text": f"{selected_floater}: Step {step}"}
         )
 
         deck_chart.pydeck_chart(r)
-        time.sleep(1)
 
-    # Show graph after animation
-    st.subheader(f"📊 Ocean Data for {selected_floater}")
+        # Show current info (temperature, salinity, pressure)
+        current_row = data.iloc[step]
+        info_box.info(
+            f"**Floater {selected_floater} | Step {step+1}/{steps}**\n\n"
+            f"📍 Location: ({current_row['latitude']:.2f}, {current_row['longitude']:.2f})\n"
+            f"🌡️ Temperature: {current_row['temperature']:.2f} °C\n"
+            f"🧂 Salinity: {current_row['salinity']:.2f} PSU\n"
+            f"⏱️ Pressure: {current_row['pressure']:.2f} dbar\n"
+            f"🕒 Time: {current_row['time']}"
+        )
+
+        time.sleep(0.5)  # animation speed
+
+    # Show graph after animation ends
+    st.subheader(f"📊 Ocean Data for Floater {selected_floater}")
     fig = px.line(
         data,
-        x="step",
-        y=["temperature", "salinity", "pH"],
-        title=f"Ocean Parameters along {selected_floater}'s Path",
+        x="time",
+        y=["temperature", "salinity", "pressure"],
+        title=f"Ocean Parameters along Floater {selected_floater}'s Path",
         markers=True
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -118,14 +129,15 @@ else:
     # Static map (show all floaters initial positions)
     all_points = []
     for name, path in floaters.items():
-        lat, lon = path[0]
-        all_points.append({"lat": lat, "lon": lon, "floater": name})
+        if path:  # not empty
+            lat, lon = path[0]
+            all_points.append({"lat": lat, "lon": lon, "floater": name})
 
-    df = pd.DataFrame(all_points)
+    df_points = pd.DataFrame(all_points)
 
     scatter_layer = pdk.Layer(
         "ScatterplotLayer",
-        df,
+        df_points,
         get_position='[lon, lat]',
         get_fill_color='[0, 200, 0]',
         get_radius=25000,
