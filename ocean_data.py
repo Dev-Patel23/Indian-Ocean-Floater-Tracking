@@ -7,9 +7,7 @@ import time
 st.set_page_config(page_title="Indian Ocean Floaters", layout="wide")
 st.title("🌊 Indian Ocean Floater Tracking (Real Data)")
 
-# ------------------------------------------------------------------
-# Load dataset
-# ------------------------------------------------------------------
+
 @st.cache_data
 def load_data():
     df = pd.read_csv("DATASET.csv")
@@ -21,9 +19,7 @@ df = load_data()
 df["time"] = pd.to_datetime(df["time"], errors="coerce")
 df = df.sort_values(["float_id", "time"]).reset_index(drop=True)
 
-# ------------------------------------------------------------------
-# Organize floaters
-# ------------------------------------------------------------------
+
 floaters = {
     str(fid): grp[["latitude", "longitude"]].values.tolist()
     for fid, grp in df.groupby("float_id")
@@ -34,16 +30,12 @@ floater_data = {
     for fid, grp in df.groupby("float_id")
 }
 
-# ------------------------------------------------------------------
-# Sidebar controls
-# ------------------------------------------------------------------
+
 st.sidebar.header("Controls")
 selected_floater = st.sidebar.radio("Select a Floater", list(floaters.keys()))
 animate = st.sidebar.button("Animate Selected Floater")
 
-# ------------------------------------------------------------------
-# Helper functions
-# ------------------------------------------------------------------
+
 def get_frame(path, step):
     if step < len(path):
         lat, lon = path[step]
@@ -55,16 +47,11 @@ def get_trails(path, step):
         return pd.DataFrame([{"path": [[lon, lat] for lat, lon in path[:step+1]]}])
     return pd.DataFrame([])
 
-# ------------------------------------------------------------------
-# Map initial state
-# ------------------------------------------------------------------
 view_state = pdk.ViewState(latitude=0, longitude=70, zoom=2)
 deck_chart = st.empty()
 info_box = st.empty()  # for showing floater info
 
-# ------------------------------------------------------------------
-# Animate only selected floater
-# ------------------------------------------------------------------
+
 path = floaters[selected_floater]
 data = floater_data[selected_floater]
 
@@ -153,3 +140,4 @@ else:
 
     deck_chart.pydeck_chart(r)
     st.info("👆 Select a floater from the sidebar and click 'Animate Selected Floater' to see its journey.")
+
